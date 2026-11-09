@@ -153,7 +153,7 @@
           <option value="512">Máximo (más lento)</option>
         </select></div>
       <label class="check" style="margin-top:12px"><input type="checkbox" id="ia_tex">
-        <span>Generar textura<small>Pinta el modelo con los colores de las fotos. Tarda más y gasta más cupo.</small></span></label>
+        <span>Pintar el modelo con las fotos<small>El color se proyecta desde tus vistas, en este equipo.</small></span></label>
       <label class="check"><input type="checkbox" id="ia_fondo">
         <span>Quitar el fondo de las fotos</span></label>
       <button class="btn main wide" id="generar" disabled>Generar modelo 3D</button>
@@ -927,6 +927,92 @@ function splitSheet(c, forceGrid) {                // separa una lámina en vist
   });
 }
 
+function paintFromViews(obj) {                     // proyecta las vistas sobre la malla como color por vértice
+  obj.updateMatrixWorld(true);
+  const meshes = []; obj.traverse(o => { if (o.isMesh) meshes.push(o); });
+  let n = 0; for (const m of meshes) n += m.geometry.attributes.position.count;
+  const PX = new Float32Array(n * 3), NX = new Float32Array(n * 3), v = new THREE.Vector3(), nm = new THREE.Matrix3();
+  let k = 0;
+  for (const m of meshes) {
+    const p = m.geometry.attributes.position, q = m.geometry.attributes.normal; nm.getNormalMatrix(m.matrixWorld);
+    for (let i = 0; i < p.count; i++, k++) {
+      v.fromBufferAttribute(p, i).applyMatrix4(m.matrixWorld); PX.set([v.x, v.y, v.z], k * 3);
+      v.fromBufferAttribute(q, i).applyMatrix3(nm).normalize(); NX.set([v.x, v.y, v.z], k * 3);
+    }
+  }
+  const SIDE = [{ d: [1, 0, 0], r: [0, 0, -1] }, { d: [-1, 0, 0], r: [0, 0, 1] }];
+  const prep = c => {
+    const s = Math.min(1, 512 / Math.max(c.width, c.height)), W = Math.round(c.width * s), H = Math.round(c.height * s);
+    const g = document.createElement('canvas'); g.width = W; g.height = H;
+    const x = g.getContext('2d', { willReadFrequently: true }); x.drawImage(c, 0, 0, W, H);
+    const rgba = x.getImageData(0, 0, W, H).data;
+    let mask = borderStats(rgba, W, H).spread < 30 ? cleanMask(maskByBorder(rgba, W, H, 30), W, H) : new Uint8Array(W * H).fill(1);
+    let x0 = W, y0 = H, x1 = 0, y1 = 0, cnt = 0;
+    for (let i = 0; i < W * H; i++) if (mask[i]) { const a = i % W, b = (i / W) | 0; cnt++; if (a < x0) x0 = a; if (a > x1) x1 = a; if (b < y0) y0 = b; if (b > y1) y1 = b; }
+    if (cnt < 50) { mask = new Uint8Array(W * H).fill(1); x0 = 0; y0 = 0; x1 = W - 1; y1 = H - 1; }
+    return { rgba, mask, W, H, x0, y0, x1, y1 };
+  };
+  const project = (im, cam) => {                   // coordenadas de imagen y profundidad de cada vértice
+    const { d, r } = cam, U = new Float32Array(n), Vv = new Float32Array(n), D = new Float32Array(n);
+    let a0 = Infinity, a1 = -Infinity, b0 = Infinity, b1 = -Infinity;
+    for (let i = 0; i < n; i++) { const a = PX[i * 3] * r[0] + PX[i * 3 + 2] * r[2], b = PX[i * 3 + 1];
+      U[i] = a; Vv[i] = b; D[i] = PX[i * 3] * d[0] + PX[i * 3 + 2] * d[2];
+      if (a < a0) a0 = a; if (a > a1) a1 = a; if (b < b0) b0 = b; if (b > b1) b1 = b; }
+    const sx = (im.x1 - im.x0) / (a1 - a0 || 1), sy = (im.y1 - im.y0) / (b1 - b0 || 1);
+    let hit = 0; const seen = new Uint8Array(im.W * im.H); let cover = 0;
+    for (let i = 0; i < n; i++) {
+      U[i] = im.x0 + (U[i] - a0) * sx; Vv[i] = im.y1 - (Vv[i] - b0) * sy;
+      const j = Math.round(Vv[i]) * im.W + Math.round(U[i]); if (im.mask[j]) hit++; if (!seen[j]) { seen[j] = 1; cover++; }
+    }
+    let area = 0, both = 0; for (let j = 0; j < im.W * im.H; j++) { if (im.mask[j]) { area++; if (seen[j]) both++; } }
+    return { U, V: Vv, D, cam, im, score: hit / n + both / Math.max(1, Math.min(area, cover)) };
+  };
+  const views = [];
+  if (V.front) views.push(project(prep(V.front), { d: [0, 0, 1], r: [1, 0, 0] }));
+  if (V.back) views.push(project(prep(V.back), { d: [0, 0, -1], r: [-1, 0, 0] }));
+  const L = V.left && prep(V.left), R = V.right && prep(V.right);
+  if (L || R) {                                    // decide de qué lado va cada vista lateral según su silueta
+    const l = L && SIDE.map(c => project(L, c)), r = R && SIDE.map(c => project(R, c));
+    const s0 = (l ? l[0].score : 0) + (r ? r[1].score : 0), s1 = (l ? l[1].score : 0) + (r ? r[0].score : 0);
+    const flip = s1 > s0 + 1e-4;
+    if (l) views.push(l[flip ? 1 : 0]); if (r) views.push(r[flip ? 0 : 1]);
+  }
+  if (!views.length) return null;
+  for (const w of views) {                         // mapa de profundidad por vista para descartar lo tapado
+    const { W, H } = w.im, Z = new Float32Array(W * H).fill(-Infinity);
+    for (let i = 0; i < n; i++) { const j = Math.round(w.V[i]) * W + Math.round(w.U[i]); if (w.D[i] > Z[j]) Z[j] = w.D[i]; }
+    w.Z = Z;
+  }
+  const col = new Float32Array(n * 3), lin = new Float32Array(256);
+  for (let i = 0; i < 256; i++) { const c = i / 255; lin[i] = c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; }
+  for (let i = 0; i < n; i++) {
+    let r = 0, g = 0, b = 0, ws = 0, best = null, bestDot = -2;
+    for (const w of views) {
+      const { W, H, rgba, mask } = w.im, x = Math.round(w.U[i]), y = Math.round(w.V[i]), j = y * W + x;
+      const dot = NX[i * 3] * w.cam.d[0] + NX[i * 3 + 2] * w.cam.d[2];
+      if (dot > bestDot) { bestDot = dot; best = w; }
+      if (dot <= 0.05 || !mask[j]) continue;
+      let zmax = -Infinity;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const xx = x + dx, yy = y + dy; if (xx >= 0 && yy >= 0 && xx < W && yy < H && w.Z[yy * W + xx] > zmax) zmax = w.Z[yy * W + xx]; }
+      if (w.D[i] < zmax - 0.04) continue;
+      const wt = dot * dot; r += lin[rgba[j * 4]] * wt; g += lin[rgba[j * 4 + 1]] * wt; b += lin[rgba[j * 4 + 2]] * wt; ws += wt;
+    }
+    if (!ws) {                                     // nadie lo ve: toma el color de la vista más de frente
+      const { W, rgba } = best.im, j = Math.round(best.V[i]) * W + Math.round(best.U[i]);
+      r = lin[rgba[j * 4]]; g = lin[rgba[j * 4 + 1]]; b = lin[rgba[j * 4 + 2]]; ws = 1;
+    }
+    col.set([r / ws, g / ws, b / ws], i * 3);
+  }
+  k = 0;
+  for (const m of meshes) {
+    const c = m.geometry.attributes.position.count;
+    m.geometry.setAttribute('color', new THREE.BufferAttribute(col.slice(k * 3, (k + c) * 3), 3)); k += c;
+    m.material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, metalness: 0.2 });
+    origMat.set(m, m.material);
+  }
+  return views.map(w => ({ dir: w.cam.d, score: +w.score.toFixed(3) }));
+}
+
 async function hyCall(api, data) {
   const cfg = await (await fetch(HY + '/config')).json();
   const dep = cfg.dependencies.find(d => d.api_name === api);
@@ -950,7 +1036,7 @@ async function hyCall(api, data) {
       else if (m.msg === 'process_completed') {
         if (!m.success) {
           const t = String(m.output?.error || m.title || '');
-          throw new Error(/quota|GPU/i.test(t) ? 'Se agotó el cupo gratuito del servicio por ahora. Intenta más tarde o desactiva la textura. Respuesta: ' + t : 'El servicio no pudo generar el modelo. ' + t);
+          throw new Error(/quota|GPU/i.test(t) ? 'Se agotó el cupo gratuito del servicio por ahora. Intenta más tarde. Respuesta: ' + t : 'El servicio no pudo generar el modelo. ' + t);
         }
         return m.output.data;
       }
@@ -973,10 +1059,10 @@ async function generate() {
       if (!up.ok) throw new Error('No se pudo enviar la vista (código ' + up.status + ').');
       files[v] = { path: (await up.json())[0], orig_name: v + '.png', meta: { _type: 'gradio.FileData' } };
     }
-    const out = await hyCall(P.ia_tex ? 'generation_all' : 'shape_generation',
+    const out = await hyCall('shape_generation',
       [null, null, files.front, files.back, files.left, files.right, 5, 5, 1234, +P.ia_res, !!P.ia_fondo, 8000, true]);
     const pickFile = d => { const f = d && (d.value ?? d); return f && (f.url || (f.path ? HY + '/file=' + f.path : null)); };
-    const url = (P.ia_tex && pickFile(out[1])) || pickFile(out[0]);
+    const url = pickFile(out[0]);
     if (!url) throw new Error('El servicio no devolvió ningún archivo.');
     setStatus('Descargando el modelo…', null);
     const buf = await (await fetch(url)).arrayBuffer();
@@ -990,12 +1076,15 @@ async function generate() {
       if (!o.material.map) { o.material = new THREE.MeshStandardMaterial({ color: 0xc9ccd1, roughness: 0.55, metalness: 0.35 }); o.geometry.computeVertexNormals(); }
       origMat.set(o, o.material);
       tris += (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3; } });
+    let painted = null;
+    if (P.ia_tex) { setStatus('Pintando el modelo con las fotos…', null); await new Promise(r => setTimeout(r, 30));
+      try { painted = paintFromViews(obj); } catch (e) { console.warn('No se pudo pintar el modelo:', e); } }
     const th = document.createElement('canvas'); th.width = th.height = 148;
     const tx = th.getContext('2d'); tx.fillStyle = '#fff'; tx.fillRect(0, 0, 148, 148);
     const r = Math.min(148 / V.front.width, 148 / V.front.height);
     tx.drawImage(V.front, (148 - V.front.width * r) / 2, (148 - V.front.height * r) / 2, V.front.width * r, V.front.height * r);
     const item = { id: ++seq, kind: 'ia', name: 'modelo_ia_' + (++iaCount), thumb: th.toDataURL('image/jpeg', 0.8), state: 'done', object: obj,
-      model: { ia: true, tris, size: size.clone().divideScalar(longest), textured: !!P.ia_tex } };
+      model: { ia: true, tris, size: size.clone().divideScalar(longest), painted } };
     items.push(item); busy = false; select(item); setStatus('');
   } catch (err) {
     console.warn(err);
