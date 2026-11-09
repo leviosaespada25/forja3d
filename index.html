@@ -23,6 +23,7 @@
     --body: "Barlow", "Segoe UI", Roboto, system-ui, sans-serif;
   }
   * { box-sizing: border-box; margin: 0; }
+  [hidden] { display: none !important; }
   html, body { height: 100%; }
   body { background: var(--steel-0); color: var(--ink); font: 15px/1.4 var(--body); }
   button, select, input { font: inherit; color: inherit; }
@@ -35,6 +36,19 @@
   .brand h1 span { color: var(--ember); }
   .brand p { color: var(--mute); font-size: 13.5px; margin-top: 5px; }
 
+  .tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 10px 20px; border-bottom: 1px solid var(--line); }
+  .tabs button { border: 1px solid var(--line); background: transparent; border-radius: 5px; padding: 8px 6px; cursor: pointer; font-size: 13.5px; }
+  .tabs button[aria-pressed=true] { background: var(--ink); color: var(--steel-0); border-color: var(--ink); font-weight: 600; }
+  .panel { counter-reset: paso; }
+  .step > h2 b::before { counter-increment: paso; content: counter(paso); }
+  .views { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .slot { position: relative; aspect-ratio: 1; border: 1.5px dashed var(--line); border-radius: 6px; background: var(--steel-2) center/contain no-repeat; cursor: pointer; padding: 0; color: var(--mute); font-size: 13px; }
+  .slot.full { border-style: solid; background-color: #fff; }
+  .slot.pick { border-color: var(--ember); box-shadow: 0 0 0 2px var(--ember); }
+  .slot span { position: absolute; left: 0; right: 0; bottom: 0; padding: 3px 6px; background: rgba(23,27,32,.85); color: var(--ink); font-size: 12.5px; border-radius: 0 0 4px 4px; }
+  .slot em { font-style: normal; color: var(--ember); }
+  .slot .x { position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; border-radius: 50%; background: var(--steel-0); color: var(--ink); border: 1px solid var(--line); display: none; place-items: center; font-size: 13px; line-height: 1; }
+  .slot.full .x { display: grid; }
   .step { padding: 16px 20px 18px; border-bottom: 1px solid var(--line); }
   .step > h2 { font: 600 19px/1.1 var(--head); display: flex; align-items: baseline; gap: 9px; margin-bottom: 12px; }
   .step > h2 b { font: 700 15px/1 var(--head); color: var(--ember-ink); background: var(--ember); width: 21px; height: 21px; display: inline-grid; place-items: center; border-radius: 3px; transform: translateY(-1px); }
@@ -114,11 +128,43 @@
   <aside class="panel">
     <div class="brand">
       <h1>Forja <span>3D</span></h1>
-      <p>De foto a modelo 3D. Todo se calcula en este equipo: tus fotos no se suben a ningún servidor.</p>
+      <p id="lema"></p>
+    </div>
+    <div class="tabs" id="tabs">
+      <button data-modo="ia" aria-pressed="true">Reconstrucción con IA</button>
+      <button data-modo="local" aria-pressed="false">Relieve local</button>
     </div>
 
+    <div id="p_ia">
     <section class="step">
-      <h2><b>1</b>Fotos</h2>
+      <h2><b></b>Vistas del objeto</h2>
+      <div class="views" id="views"></div>
+      <button class="btn wide" id="lamina">Cargar una lámina con varias vistas</button>
+      <input type="file" id="file_v" accept="image/*" multiple hidden>
+      <input type="file" id="file_l" accept="image/*" hidden>
+      <p class="hint">El frente es obligatorio. Las vistas deben mostrar el mismo objeto en la misma posición, visto de frente, de atrás y de cada lado. Toca dos casillas para intercambiarlas.</p>
+    </section>
+    <section class="step">
+      <h2><b></b>Generación</h2>
+      <div class="field"><label for="ia_res">Detalle de la geometría</label>
+        <select id="ia_res">
+          <option value="256">Estándar</option>
+          <option value="384">Alto</option>
+          <option value="512">Máximo (más lento)</option>
+        </select></div>
+      <label class="check" style="margin-top:12px"><input type="checkbox" id="ia_tex">
+        <span>Generar textura<small>Pinta el modelo con los colores de las fotos. Tarda más y gasta más cupo.</small></span></label>
+      <label class="check"><input type="checkbox" id="ia_fondo">
+        <span>Quitar el fondo de las fotos</span></label>
+      <button class="btn main wide" id="generar" disabled>Generar modelo 3D</button>
+      <p class="hint">Usa Hunyuan3D-2mv en Hugging Face. El servicio es gratuito y tiene un cupo diario por usuario.</p>
+    </section>
+    </div>
+
+    <div id="p_local" hidden>
+
+    <section class="step">
+      <h2><b></b>Fotos</h2>
       <div class="drop" id="drop" role="button" tabindex="0">
         <strong>Elegir fotos</strong>
         o arrástralas aquí. Puedes cargar varias a la vez.
@@ -128,7 +174,7 @@
     </section>
 
     <section class="step">
-      <h2><b>2</b>Recorte del objeto</h2>
+      <h2><b></b>Recorte del objeto</h2>
       <div class="field">
         <label for="fondo">Cómo quitar el fondo</label>
         <select id="fondo">
@@ -146,7 +192,7 @@
     </section>
 
     <section class="step">
-      <h2><b>3</b>Volumen</h2>
+      <h2><b></b>Volumen</h2>
       <label class="check"><input type="checkbox" id="ia">
         <span>Estimar la profundidad con IA
           <small>La primera vez descarga el modelo (27 MB) y queda guardado en el navegador.</small></span>
@@ -176,8 +222,10 @@
       <button class="btn wide" id="todas" disabled>Convertir todas las fotos</button>
     </section>
 
+    </div>
+
     <section class="step">
-      <h2><b>4</b>Exportar</h2>
+      <h2><b></b>Exportar</h2>
       <div class="field"><label for="mm">Lado mayor del objeto (mm)</label>
         <input type="number" id="mm" min="1" max="100000" step="1"></div>
       <div class="row">
@@ -189,15 +237,15 @@
       <p class="hint">GLB lleva la textura y sirve para web, Android y motores 3D. STL es para impresión: sale cerrado y con la espalda hacia la cama.</p>
     </section>
 
-    <p class="note">El frente sale de la foto. La parte trasera es una estimación, porque una sola foto no la muestra.</p>
+    <p class="note" id="nota"></p>
   </aside>
 
   <main class="work">
     <div id="stage">
       <div class="empty" id="empty">
         <div>
-          <h2>Carga una foto y sale la pieza</h2>
-          <p>Forja 3D recorta el objeto, calcula su profundidad y arma una malla cerrada que puedes girar, ajustar y exportar.</p>
+          <h2 id="e_h"></h2>
+          <p id="e_p"></p>
         </div>
       </div>
       <div class="hud">
@@ -222,6 +270,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { STLExporter } from 'three/addons/exporters/STLExporter.js';
 import { OBJExporter } from 'three/addons/exporters/OBJExporter.js';
@@ -232,7 +281,7 @@ const DEPTH_MODEL = 'onnx-community/depth-anything-v2-small';
 const $ = id => document.getElementById(id);
 
 /* ============================================================ estado */
-const DEF = { fondo: 'auto', tol: 38, ia: true, grosor: 0.9, relieve: 0.6, trasero: 0.5, redondeo: 0.36, suave: 2, res: 256, back: 'foto', mm: 100 };
+const DEF = { fondo: 'auto', tol: 38, ia: true, grosor: 0.9, relieve: 0.6, trasero: 0.5, redondeo: 0.36, suave: 2, res: 256, back: 'foto', mm: 100, modo: 'ia', ia_res: 256, ia_tex: true, ia_fondo: true };
 let P = { ...DEF };
 try { Object.assign(P, JSON.parse(localStorage.getItem('forja3d.params') || '{}')); } catch {}
 const items = [];
@@ -622,6 +671,14 @@ function show(item) {
   const cut = $('cut');
   if (!has) { $('stats').textContent = ''; cut.style.display = 'none'; return; }
   const m = item.model;
+  if (m.ia) {
+    clay.wireframe = viewMode === 'wire';
+    item.object.traverse(o => { if (o.isMesh) o.material = viewMode === 'tex' ? origMat.get(o) : clay; });
+    mesh = item.object; scene.add(mesh); cut.style.display = 'none';
+    const mmi = v => Math.round(v * P.mm);
+    $('stats').innerHTML = `${mmi(m.size.x)} × ${mmi(m.size.y)} × ${mmi(m.size.z)} mm<br>${(m.tris / 1000).toFixed(1)} mil triángulos`;
+    return;
+  }
   for (const old of new Set(item.mats || [])) old.dispose();
   item.mats = materialsFor(item, m);
   clay.wireframe = viewMode === 'wire';
@@ -654,7 +711,7 @@ let timer = null, again = false;
 function refresh() {                               // reconstruye el modelo actual tras mover un control
   clearTimeout(timer);
   timer = setTimeout(async () => {
-    if (!current) return;
+    if (!current || current.kind === 'ia') return;
     if (busy) { again = true; return; }
     busy = true;
     try { await convert(current); } finally { busy = false; show(current); if (again) { again = false; refresh(); } }
@@ -672,7 +729,7 @@ function drawQueue() {
     b.innerHTML = '<i></i><span class="x" title="Quitar">×</span>';
     b.onclick = e => {
       if (e.target.classList.contains('x')) {
-        items.splice(items.indexOf(it), 1); it.model?.geo.dispose(); it.map?.dispose();
+        items.splice(items.indexOf(it), 1); it.model?.geo?.dispose(); it.map?.dispose();
         if (current === it) select(items[0] || null); else { drawQueue(); show(current); }
       } else select(it);
     };
@@ -710,6 +767,13 @@ function download(data, name, type) {
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 4000);
 }
 function exportMesh(item, scale) {
+  if (item.kind === 'ia') {
+    item.object.traverse(o => { if (o.isMesh) o.material = origMat.get(o); });
+    const g = new THREE.Group(); g.add(item.object.clone(true)); g.name = safe(item.name);
+    g.scale.setScalar(scale); g.updateMatrixWorld(true);
+    if (item === current) show(current);
+    return g;
+  }
   const mats = materialsFor(item, item.model);
   const geo = item.model.geo.clone();
   let m;
@@ -737,7 +801,7 @@ $('todas').onclick = async () => {
   if (busy) return; busy = true; $('todas').disabled = true;
   try {
     let n = 0;
-    for (const it of items) { n++; setStatus(`Convirtiendo ${n} de ${items.length}: ${it.name}`, (n - 1) / items.length); await convert(it, { quiet: true }); }
+    for (const it of items) { n++; if (it.kind === 'ia') continue; setStatus(`Convirtiendo ${n} de ${items.length}: ${it.name}`, (n - 1) / items.length); await convert(it, { quiet: true }); }
     const bad = items.filter(i => i.state === 'error').length;
     setStatus(bad ? `Listo, pero ${bad} foto(s) no se pudieron convertir. Selecciónalas y ajusta el recorte.` : '', 0, !!bad);
   } finally { busy = false; show(current); }
@@ -760,6 +824,7 @@ for (const k of Object.keys(DEF)) {
     const o = $('o_' + k); if (o) o.textContent = fmt[k](P[k]);
     try { localStorage.setItem('forja3d.params', JSON.stringify(P)); } catch {}
     if (k === 'ia' && P.ia && current) current.depthFail = null;      // reintenta la IA al volver a activarla
+    if (k.startsWith('ia_')) return;
     if (k === 'mm' || k === 'back') show(current); else refresh();
   });
 }
@@ -778,11 +843,195 @@ drop.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefau
 file.onchange = () => { addFiles(file.files); file.value = ''; };
 for (const ev of ['dragenter', 'dragover']) addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); });
 for (const ev of ['dragleave', 'drop']) addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); });
-addEventListener('drop', e => { if (e.dataTransfer?.files?.length) addFiles(e.dataTransfer.files); });
-addEventListener('paste', e => { const f = [...(e.clipboardData?.files || [])]; if (f.length) addFiles(f); });
+addEventListener('drop', e => { if (e.dataTransfer?.files?.length) (P.modo === 'ia' ? addViews : addFiles)(e.dataTransfer.files); });
+addEventListener('paste', e => { const f = [...(e.clipboardData?.files || [])]; if (f.length) (P.modo === 'ia' ? addViews : addFiles)(f); });
+
+/* ============================================================ reconstrucción con IA (Hunyuan3D-2mv) */
+const HY = 'https://tencent-hunyuan3d-2mv.hf.space';
+const VISTAS = [['front', 'Frente'], ['back', 'Espalda'], ['left', 'Izquierda'], ['right', 'Derecha']];
+const V = { front: null, back: null, left: null, right: null };
+const origMat = new WeakMap();
+let pick = null, slotTarget = null, iaCount = 0;
+
+async function fileToCanvas(f) {
+  const bmp = await createImageBitmap(f, { imageOrientation: 'from-image' });
+  const s = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
+  const c = document.createElement('canvas'); c.width = Math.round(bmp.width * s); c.height = Math.round(bmp.height * s);
+  const x = c.getContext('2d', { willReadFrequently: true }); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height); x.drawImage(bmp, 0, 0, c.width, c.height);
+  return c;
+}
+function fit1024(c) {
+  const s = Math.min(1, 1024 / Math.max(c.width, c.height)); if (s === 1) return c;
+  const o = document.createElement('canvas'); o.width = Math.round(c.width * s); o.height = Math.round(c.height * s);
+  o.getContext('2d').drawImage(c, 0, 0, o.width, o.height); return o;
+}
+function drawViews() {
+  const el = $('views'); el.textContent = '';
+  for (const [v, label] of VISTAS) {
+    const b = document.createElement('button');
+    b.className = 'slot' + (V[v] ? ' full' : '') + (pick === v ? ' pick' : '');
+    if (V[v]) b.style.backgroundImage = `url(${V[v].toDataURL('image/jpeg', 0.8)})`;
+    b.innerHTML = `${V[v] ? '' : 'Elegir foto'}<span>${label}${v === 'front' ? ' <em>(obligatoria)</em>' : ''}</span><i class="x" title="Quitar">×</i>`;
+    b.onclick = e => {
+      if (e.target.classList.contains('x')) { V[v] = null; pick = null; }
+      else if (pick && pick !== v) { [V[pick], V[v]] = [V[v], V[pick]]; pick = null; }
+      else if (pick === v) pick = null;
+      else if (V[v]) pick = v;
+      else { slotTarget = v; $('file_v').click(); return; }
+      drawViews();
+    };
+    el.appendChild(b);
+  }
+  $('generar').disabled = !V.front || busy;
+}
+async function addViews(files, target = null) {
+  const list = [...files].filter(f => f.type.startsWith('image/'));
+  if (!list.length) { setStatus('Ese archivo no es una imagen. Usa JPG, PNG o WebP.', 0, true); return; }
+  if (list.length === 1 && !target && !V.front) {            // una sola imagen: puede ser una lámina
+    const c = await fileToCanvas(list[0]); const parts = splitSheet(c, false);
+    if (parts.length > 1) { parts.forEach((p, i) => { V[VISTAS[i][0]] = p; }); drawViews(); setStatus(`La lámina se separó en ${parts.length} vistas. Revisa que cada una quede en su casilla.`, 0, true); return; }
+  }
+  for (const f of list) {
+    const v = target || VISTAS.map(x => x[0]).find(k => !V[k]); target = null;
+    if (!v) break;
+    try { V[v] = fit1024(await fileToCanvas(f)); } catch { setStatus(`No se pudo leer ${f.name}.`, 0, true); }
+  }
+  drawViews();
+}
+function splitSheet(c, forceGrid) {                // separa una lámina en vistas (hasta 4)
+  const k = Math.min(1, 360 / Math.max(c.width, c.height)), W = Math.round(c.width * k), H = Math.round(c.height * k);
+  const g = document.createElement('canvas'); g.width = W; g.height = H;
+  const gx = g.getContext('2d', { willReadFrequently: true }); gx.drawImage(c, 0, 0, W, H);
+  const rgba = gx.getImageData(0, 0, W, H).data;
+  let boxes = [];
+  if (borderStats(rgba, W, H).spread < 30) {
+    const mask = cleanMask(maskByBorder(rgba, W, H, 30), W, H);
+    const { lab, sizes } = components(mask, W, H, 1);
+    const bb = sizes.map(() => [W, H, 0, 0]);
+    for (let i = 0; i < W * H; i++) { const l = lab[i]; if (l < 0) continue; const x = i % W, y = (i / W) | 0, b = bb[l];
+      if (x < b[0]) b[0] = x; if (y < b[1]) b[1] = y; if (x > b[2]) b[2] = x; if (y > b[3]) b[3] = y; }
+    const big = Math.max(0, ...sizes);
+    boxes = bb.map((b, i) => ({ b, n: sizes[i] })).filter(o => o.n >= big * 0.2).sort((p, q) => q.n - p.n).slice(0, 4).map(o => o.b);
+    boxes.sort((p, q) => (Math.round((p[1] + p[3]) / 2 / (H * 0.34)) - Math.round((q[1] + q[3]) / 2 / (H * 0.34))) || (p[0] - q[0]));
+  }
+  if (boxes.length < 2) {
+    if (!forceGrid) return [];
+    boxes = [[0, 0, W / 2, H / 2], [W / 2, 0, W, H / 2], [0, H / 2, W / 2, H], [W / 2, H / 2, W, H]];
+  }
+  return boxes.map(b => {
+    const pad = Math.max(b[2] - b[0], b[3] - b[1]) * 0.08;
+    const x0 = Math.max(0, (b[0] - pad) / k), y0 = Math.max(0, (b[1] - pad) / k), x1 = Math.min(c.width, (b[2] + pad) / k), y1 = Math.min(c.height, (b[3] + pad) / k);
+    const o = document.createElement('canvas'); o.width = Math.round(x1 - x0); o.height = Math.round(y1 - y0);
+    o.getContext('2d').drawImage(c, x0, y0, x1 - x0, y1 - y0, 0, 0, o.width, o.height);
+    return fit1024(o);
+  });
+}
+
+async function hyCall(api, data) {
+  const cfg = await (await fetch(HY + '/config')).json();
+  const dep = cfg.dependencies.find(d => d.api_name === api);
+  if (!dep) throw new Error('El servicio cambió su interfaz y Forja 3D todavía no la reconoce.');
+  const sh = Math.random().toString(36).slice(2) + Date.now().toString(36);
+  const jr = await fetch(HY + '/queue/join', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ data, fn_index: dep.id ?? cfg.dependencies.indexOf(dep), session_hash: sh }) });
+  if (!jr.ok) throw new Error('El servicio no aceptó la solicitud (código ' + jr.status + ').');
+  const rd = (await fetch(HY + '/queue/data?session_hash=' + sh)).body.getReader(), dec = new TextDecoder();
+  let buf = '';
+  for (;;) {
+    const { value, done } = await rd.read(); if (done) break;
+    buf += dec.decode(value, { stream: true });
+    let i;
+    while ((i = buf.indexOf('\n\n')) >= 0) {
+      const line = buf.slice(0, i); buf = buf.slice(i + 2);
+      if (!line.startsWith('data:')) continue;
+      const m = JSON.parse(line.slice(5));
+      if (m.msg === 'estimation') setStatus(m.rank > 0 ? `En cola: ${m.rank} solicitud(es) por delante…` : 'Esperando turno en el servicio…', null);
+      else if (m.msg === 'process_starts') setStatus('Generando el modelo 3D…', null);
+      else if (m.msg === 'process_completed') {
+        if (!m.success) {
+          const t = String(m.output?.error || m.title || '');
+          throw new Error(/quota|GPU/i.test(t) ? 'Se agotó el cupo gratuito del servicio por ahora. Intenta más tarde o desactiva la textura. Respuesta: ' + t : 'El servicio no pudo generar el modelo. ' + t);
+        }
+        return m.output.data;
+      }
+    }
+  }
+  throw new Error('El servicio cerró la conexión antes de entregar el modelo.');
+}
+
+async function generate() {
+  if (busy || !V.front) return;
+  busy = true; drawViews();
+  try {
+    setStatus('Enviando las vistas al servicio…', null);
+    const files = {};
+    for (const [v] of VISTAS) {
+      if (!V[v]) { files[v] = null; continue; }
+      const blob = await new Promise(r => V[v].toBlob(r, 'image/png'));
+      const fd = new FormData(); fd.append('files', blob, v + '.png');
+      const up = await fetch(HY + '/upload', { method: 'POST', body: fd });
+      if (!up.ok) throw new Error('No se pudo enviar la vista (código ' + up.status + ').');
+      files[v] = { path: (await up.json())[0], orig_name: v + '.png', meta: { _type: 'gradio.FileData' } };
+    }
+    const out = await hyCall(P.ia_tex ? 'generation_all' : 'shape_generation',
+      [null, null, files.front, files.back, files.left, files.right, 5, 5, 1234, +P.ia_res, !!P.ia_fondo, 8000, true]);
+    const pickFile = d => { const f = d && (d.value ?? d); return f && (f.url || (f.path ? HY + '/file=' + f.path : null)); };
+    const url = (P.ia_tex && pickFile(out[1])) || pickFile(out[0]);
+    if (!url) throw new Error('El servicio no devolvió ningún archivo.');
+    setStatus('Descargando el modelo…', null);
+    const buf = await (await fetch(url)).arrayBuffer();
+    const gltf = await new Promise((res, rej) => new GLTFLoader().parse(buf, '', res, rej));
+    const inner = gltf.scene, box = new THREE.Box3().setFromObject(inner), size = box.getSize(new THREE.Vector3()), c = box.getCenter(new THREE.Vector3());
+    const longest = Math.max(size.x, size.y, size.z) || 1;
+    inner.position.sub(c);
+    const obj = new THREE.Group(); obj.add(inner); obj.scale.setScalar(1 / longest);
+    let tris = 0;
+    inner.traverse(o => { if (o.isMesh) {
+      if (!o.material.map) { o.material = new THREE.MeshStandardMaterial({ color: 0xc9ccd1, roughness: 0.55, metalness: 0.35 }); o.geometry.computeVertexNormals(); }
+      origMat.set(o, o.material);
+      tris += (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3; } });
+    const th = document.createElement('canvas'); th.width = th.height = 148;
+    const tx = th.getContext('2d'); tx.fillStyle = '#fff'; tx.fillRect(0, 0, 148, 148);
+    const r = Math.min(148 / V.front.width, 148 / V.front.height);
+    tx.drawImage(V.front, (148 - V.front.width * r) / 2, (148 - V.front.height * r) / 2, V.front.width * r, V.front.height * r);
+    const item = { id: ++seq, kind: 'ia', name: 'modelo_ia_' + (++iaCount), thumb: th.toDataURL('image/jpeg', 0.8), state: 'done', object: obj,
+      model: { ia: true, tris, size: size.clone().divideScalar(longest), textured: !!P.ia_tex } };
+    items.push(item); busy = false; select(item); setStatus('');
+  } catch (err) {
+    console.warn(err);
+    setStatus(/Failed to fetch|NetworkError/i.test(err.message) ? 'No hay conexión con el servicio de IA. Revisa internet e intenta de nuevo.' : err.message, 0, true);
+  } finally { busy = false; drawViews(); }
+}
+
+const TXT = {
+  ia: ['Fotos de varios lados, una sola pieza', 'Carga el frente del objeto y, si las tienes, la espalda y los lados. La IA reconstruye la figura completa.',
+       'De fotos a modelo 3D. En este modo las fotos se envían al servicio Hunyuan3D-2mv (Tencent, en Hugging Face), que genera el modelo.',
+       'La IA completa lo que las fotos no muestran. Mientras más vistas le des, más se parece a la pieza real.'],
+  local: ['Carga una foto y sale la pieza', 'Forja 3D recorta el objeto, calcula su profundidad y arma una malla cerrada que puedes girar, ajustar y exportar.',
+       'De foto a relieve 3D. En este modo todo se calcula en este equipo: tus fotos no se suben a ningún servidor.',
+       'El frente sale de la foto. La parte trasera es una estimación, porque una sola foto no la muestra.'],
+};
+function setModo(m) {
+  P.modo = m === 'local' ? 'local' : 'ia';
+  $('p_ia').hidden = P.modo !== 'ia'; $('p_local').hidden = P.modo !== 'local';
+  for (const b of $('tabs').children) b.setAttribute('aria-pressed', b.dataset.modo === P.modo);
+  const t = TXT[P.modo]; $('e_h').textContent = t[0]; $('e_p').textContent = t[1]; $('lema').textContent = t[2]; $('nota').textContent = t[3];
+  try { localStorage.setItem('forja3d.params', JSON.stringify(P)); } catch {}
+}
+$('tabs').onclick = e => { if (e.target.dataset.modo) setModo(e.target.dataset.modo); };
+$('file_v').onchange = e => { addViews(e.target.files, slotTarget); slotTarget = null; e.target.value = ''; };
+$('lamina').onclick = () => $('file_l').click();
+$('file_l').onchange = async e => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  try { const parts = splitSheet(await fileToCanvas(f), true); for (const [v] of VISTAS) V[v] = null;
+    parts.forEach((p, i) => { V[VISTAS[i][0]] = p; }); pick = null; drawViews(); }
+  catch { setStatus(`No se pudo leer ${f.name}.`, 0, true); }
+};
+$('generar').onclick = generate;
+setModo(P.modo); drawViews();
 
 // ganchos para pruebas automáticas
-window.__forja = { items, P, get current() { return current; }, get busy() { return busy; }, refresh,
+window.__forja = { items, P, V, drawViews, generate, splitSheet, get current() { return current; }, get busy() { return busy; }, refresh,
   injectDepth(w, h, data) { current.depth = { data, w, h }; current.depthFail = null; refresh(); },
   orbit(az, el, r = 2.4) { setSpin(false); const a = az * Math.PI / 180, e = el * Math.PI / 180; camera.position.set(r * Math.cos(e) * Math.sin(a), r * Math.sin(e), r * Math.cos(e) * Math.cos(a)); controls.update(); } };
 </script>
